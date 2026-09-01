@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Driven Van der Pol Oscillator</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        h2 {
+            margin: 15px 0 5px 0;
+            font-weight: 400;
+            letter-spacing: 1px;
+            color: #38bdf8;
+        }
+        #container {
+            display: flex;
+            gap: 20px;
+            width: 95%;
+            max-width: 1200px;
+            height: 65vh;
+            margin-top: 10px;
+        }
+        canvas {
+            background-color: #1e293b;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            width: 100%;
+            height: 100%;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-around;
+            width: 95%;
+            max-width: 1200px;
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 30%;
+        }
+        label {
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #cbd5e1;
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+        }
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+            accent-color: #38bdf8;
+        }
+        .val-display {
+            font-weight: bold;
+            color: #38bdf8;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Driven Van der Pol Oscillator</h2>
+    
+    <div id="container">
+        <!-- Canvas for the physical oscillator -->
+        <canvas id="oscillatorCanvas"></canvas>
+        <!-- Canvas for the Phase Portrait (Velocity vs Position) -->
+        <canvas id="phaseCanvas"></canvas>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <label><span>Non-linearity (μ)</span> <span id="muVal" class="val-display">1.5</span></label>
+            <input type="range" id="mu" min="0" max="5" step="0.01" value="1.5">
+        </div>
+        <div class="control-group">
+            <label><span>Driving Amplitude (A)</span> <span id="AVal" class="val-display">1.2</span></label>
+            <input type="range" id="A" min="0" max="5" step="0.01" value="1.2">
+        </div>
+        <div class="control-group">
+            <label><span>Driving Freq (ω)</span> <span id="omegaVal" class="val-display">1.0</span></label>
+            <input type="range" id="omega" min="0.1" max="3" step="0.01" value="1.0">
+        </div>
+    </div>
+
+    <script>
+        const oscCanvas = document.getElementById('oscillatorCanvas');
+        const phaseCanvas = document.getElementById('phaseCanvas');
+        const oscCtx = oscCanvas.getContext('2d');
+        const phaseCtx = phaseCanvas.getContext('2d');
+
+        // Resize canvases to fit containers
+        function resize() {
+            oscCanvas.width = oscCanvas.clientWidth;
+            oscCanvas.height = oscCanvas.clientHeight;
+            phaseCanvas.width = phaseCanvas.clientWidth;
+            phaseCanvas.height = phaseCanvas.clientHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // State variables
+        let x = 2.0;
+        let v = 0.0;
+        let t = 0.0;
+        const dt = 0.02; // Time step
+        let phasePath = []; // Stores points for the phase plot
+
+        // UI Elements
+        const muSlider = document.getElementById('mu');
+        const ASlider = document.getElementById('A');
+        const omegaSlider = document.getElementById('omega');
+        const muDisplay = document.getElementById('muVal');
+        const ADisplay = document.getElementById('AVal');
+        const omegaDisplay = document.getElementById('omegaVal');
+
+        // Clear phase path when parameters change to see new attractors clearly
+        function resetPath() { phasePath = []; }
+        muSlider.addEventListener('input', () => { muDisplay.textContent = muSlider.value; resetPath(); });
+        ASlider.addEventListener('input', () => { ADisplay.textContent = ASlider.value; resetPath(); });
+        omegaSlider.addEventListener('input', () => { omegaDisplay.textContent = omegaSlider.value; resetPath(); });
+
+        // The Van der Pol Differential Equation
+        function acceleration(x, v, t, mu, A, omega) {
+            return mu * (1 - x * x) * v - x + A * Math.cos(omega * t);
+        }
+
+        // 4th-Order Runge-Kutta numerical solver (highly stable)
+        function rk4Step() {
+            const mu = parseFloat(muSlider.value);
+            const A = parseFloat(ASlider.value);
+            const omega = parseFloat(omegaSlider.value);
+
+            // Calculate 4 intermediate slopes
+            let k1x = v;
+            let k1v = acceleration(x, v, t, mu, A, omega);
+
+            let k2x = v + 0.5 * dt * k1v;
+            let k2v = acceleration(x + 0.5 * dt * k1x, v + 0.5 * dt * k1v, t + 0.5 * dt, mu, A, omega);
+
+            let k3x = v + 0.5 * dt * k2v;
+            let k3v = acceleration(x + 0.5 * dt * k2x, v + 0.5 * dt * k2v, t + 0.5 * dt, mu, A, omega);
+
+            let k4x = v + dt * k3v;
+            let k4v = acceleration(x + dt * k3x, v + dt * k3v, t + dt, mu, A, omega);
+
+            // Update state
+            x += (dt / 6.0) * (k1x + 2 * k2x + 2 * k3x + k4x);
+            v += (dt / 6.0) * (k1v + 2 * k2v + 2 * k3v + k4v);
+            t += dt;
+
+            // Save path for phase portrait
+            phasePath.push({x: x, v: v});
+            if (phasePath.length > 800) phasePath.shift(); // Keep path length manageable
+        }
+
+        function drawSpring(ctx, startX, startY, endX, endY, coils, radius) {
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            const dx = endX - startX;
+            const step = dx / coils;
+            
+            for (let i = 0; i < coils; i++) {
+                let currentX = startX + i * step;
+                ctx.lineTo(currentX + step * 0.25, startY - radius);
+                ctx.lineTo(currentX + step * 0.75, startY + radius);
+            }
+            ctx.lineTo(endX, endY);
+            ctx.strokeStyle = '#94a3b8';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        function drawOscillator() {
+            oscCtx.clearRect(0, 0, oscCanvas.width, oscCanvas.height);
+            
+            const centerY = oscCanvas.height / 2;
+            const centerX = oscCanvas.width / 2;
+            const scale = oscCanvas.width / 12; // visual scale
+
+            // Anchor point (The "Driving" wall moving based on A*cos(wt))
+            const A = parseFloat(ASlider.value);
+            const omega = parseFloat(omegaSlider.value);
+            const driveForce = A * Math.cos(omega * t);
+            const anchorX = centerX / 4 + driveForce * (scale * 0.5);
+
+            // Mass position
+            const massX = centerX + x * scale;
+
+            // Draw driving wave indicator
+            oscCtx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+            oscCtx.fillRect(centerX/4 - scale*1.5, centerY - 40, scale*3, 80);
+            
+            // Draw Anchor wall
+            oscCtx.fillStyle = '#ef4444'; // Red driver
+            oscCtx.fillRect(anchorX - 5, centerY - 30, 10, 60);
+
+            // Draw Spring
+            drawSpring(oscCtx, anchorX, centerY, massX - 20, centerY, 15, 15);
+
+            // Draw Mass with a glow effect
+            oscCtx.shadowBlur = 20;
+            oscCtx.shadowColor = '#38bdf8';
+            oscCtx.fillStyle = '#38bdf8';
+            oscCtx.beginPath();
+            oscCtx.arc(massX, centerY, 20, 0, Math.PI * 2);
+            oscCtx.fill();
+            oscCtx.shadowBlur = 0; // reset shadow
+
+            // Labels
+            oscCtx.fillStyle = '#cbd5e1';
+            oscCtx.font = '14px sans-serif';
+            oscCtx.fillText('Physical System', 20, 30);
+            oscCtx.fillText('Driving Force', anchorX - 35, centerY + 50);
+        }
+
+        function drawPhasePortrait() {
+            // Slight fade effect for trails
+            phaseCtx.fillStyle = 'rgba(30, 41, 59, 0.3)';
+            phaseCtx.fillRect(0, 0, phaseCanvas.width, phaseCanvas.height);
+
+            const centerX = phaseCanvas.width / 2;
+            const centerY = phaseCanvas.height / 2;
+            const scaleX = phaseCanvas.width / 10;
+            const scaleV = phaseCanvas.height / 12;
+
+            // Draw axes
+            phaseCtx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            phaseCtx.lineWidth = 1;
+            phaseCtx.beginPath();
+            phaseCtx.moveTo(0, centerY); phaseCtx.lineTo(phaseCanvas.width, centerY);
+            phaseCtx.moveTo(centerX, 0); phaseCtx.lineTo(centerX, phaseCanvas.height);
+            phaseCtx.stroke();
+
+            // Draw Phase Path
+            if (phasePath.length > 1) {
+                phaseCtx.beginPath();
+                for (let i = 0; i < phasePath.length; i++) {
+                    let px = centerX + phasePath[i].x * scaleX;
+                    let pv = centerY - phasePath[i].v * scaleV;
+                    if (i === 0) phaseCtx.moveTo(px, pv);
+                    else phaseCtx.lineTo(px, pv);
+                }
+                
+                // Neon glow line
+                phaseCtx.strokeStyle = '#a855f7';
+                phaseCtx.lineWidth = 2;
+                phaseCtx.shadowBlur = 10;
+                phaseCtx.shadowColor = '#a855f7';
+                phaseCtx.stroke();
+                phaseCtx.shadowBlur = 0;
+                
+                // Draw current position dot
+                let currentPx = centerX + x * scaleX;
+                let currentPv = centerY - v * scaleV;
+                phaseCtx.fillStyle = '#fff';
+                phaseCtx.beginPath();
+                phaseCtx.arc(currentPx, currentPv, 4, 0, Math.PI * 2);
+                phaseCtx.fill();
+            }
+
+            // Labels
+            phaseCtx.fillStyle = '#cbd5e1';
+            phaseCtx.font = '14px sans-serif';
+            phaseCtx.fillText('Phase Portrait (Velocity vs. Position)', 20, 30);
+        }
+
+        function animate() {
+            // Do multiple math steps per frame for smooth speed
+            for(let i=0; i<3; i++) {
+                rk4Step();
+            }
+            drawOscillator();
+            drawPhasePortrait();
+            requestAnimationFrame(animate);
+        }
+
+        // Start animation
+        animate();
+    </script>
+</body>
+</html>
